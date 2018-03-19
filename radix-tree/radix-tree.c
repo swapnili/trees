@@ -235,6 +235,72 @@ void **radix_tree_lookup_slot(struct radix_tree_root *root, unsigned long index)
 	return slot;
 }
 
+void **radix_tree_next_chunk(struct radix_tree_root *root, struct
+			     radix_tree_iter *iter)
+{
+	unsigned shift;
+	struct radix_tree_node *rnode, *node;
+	unsigned long index, offset, height;
+
+	index = iter->next_index;
+	if (!index && iter->index)
+		return NULL;
+
+	rnode = root->rnode;
+	if (radix_tree_is_indirect_ptr(rnode)) {
+		rnode = indirect_to_ptr(rnode);
+	} else if (rnode && !index) {
+		/* Single-slot tree */
+		iter->index = 0;
+		iter->next_index = 1;
+		return (void **)&root->rnode;
+	} else
+		return NULL;
+
+restart:
+	height = rnode->path & RADIX_TREE_HEIGHT_MASK;
+	shift = (height - 1) * RADIX_TREE_MAP_SHIFT;
+	offset = index >> shift;
+
+	/* Index outside of the tree */
+	if (offset >= RADIX_TREE_MAP_SIZE)
+		return NULL;
+
+	node = rnode;
+	while (1) {
+		if (!node->slots[offset]) {
+			/* Hole detected */
+			while (++offset < RADIX_TREE_MAP_SIZE) {
+				if (node->slots[offset])
+					break;
+			}
+			index &= ~((RADIX_TREE_MAP_SIZE << shift) - 1);
+			index += offset << shift;
+			/* Overflow after ~0UL */
+			if (!index)
+				return NULL;
+			if (offset == RADIX_TREE_MAP_SIZE)
+				goto restart;
+		}
+
+		/* This is leaf-node */
+		if (!shift)
+			break;
+
+		node = node->slots[offset];
+		if (node == NULL)
+			goto restart;
+		shift -= RADIX_TREE_MAP_SHIFT;
+		offset = (index >> shift) & RADIX_TREE_MAP_MASK;
+	}
+
+	/* Update the iterator state */
+	iter->index = index;
+	iter->next_index = (index | RADIX_TREE_MAP_MASK) + 1;
+
+	return node->slots + offset;
+}
+
 static void radix_tree_node_free(struct radix_tree_node *node)
 {
 	node->slots[0] = NULL;

@@ -64,6 +64,47 @@ struct radix_tree_node {
 		(root)->height = 0;	\
 	} while (0)
 
+struct radix_tree_iter {
+	unsigned long   index;
+	unsigned long   next_index;
+};
+
+void **radix_tree_next_chunk(struct radix_tree_root *root,
+			     struct radix_tree_iter *iter);
+
+static inline void **radix_tree_iter_init(struct radix_tree_iter *iter, unsigned
+					  long start)
+{
+	iter->index = 0;
+	iter->next_index = start;
+	return NULL;
+}
+
+static inline radix_tree_chunk_size(struct radix_tree_iter *iter)
+{
+	return iter->next_index - iter->index;
+}
+
+static inline void **radix_tree_next_slot(void **slot, struct radix_tree_iter
+					  *iter)
+{
+	long size = radix_tree_chunk_size(iter);
+
+	while (--size > 0) {
+		slot++;
+		iter->index++;
+		if (*slot)
+			return slot;
+	}
+
+	return NULL;
+}
+
+#define radix_tree_for_each_slot(slot, root, iter, start)	\
+	for (slot = radix_tree_iter_init(iter, start) ;		\
+	     slot || (slot = radix_tree_next_chunk(root, iter)) ;	\
+	     slot = radix_tree_next_slot(slot, iter))
+
 int __radix_tree_create(struct radix_tree_root *root, unsigned long index,
 			struct radix_tree_node **nodep,	void ***slotp);
 
